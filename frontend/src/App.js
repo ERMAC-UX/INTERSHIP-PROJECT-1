@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+// Use your deployed backend URL
+const API_BASE = 'https://cti-dashboard-backend.onrender.com/api';
 
 function App() {
   const [target, setTarget] = useState('');
@@ -20,7 +21,12 @@ function App() {
 
   const loadHistory = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/history`);
+      const response = await axios.get(`${API_BASE}/history`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        withCredentials: false
+      });
       setHistory(response.data);
     } catch (error) {
       console.error('Error loading history:', error);
@@ -29,7 +35,12 @@ function App() {
 
   const loadStats = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/stats`);
+      const response = await axios.get(`${API_BASE}/stats`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        withCredentials: false
+      });
       setStats(response.data);
     } catch (error) {
       console.error('Error loading stats:', error);
@@ -42,7 +53,15 @@ function App() {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/scan`, { target });
+      const response = await axios.post(`${API_BASE}/scan`, 
+        { target },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          withCredentials: false
+        }
+      );
       setResult(response.data);
       loadHistory();
       loadStats();
