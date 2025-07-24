@@ -5,17 +5,31 @@ import sqlite3
 import json
 from datetime import datetime
 import re
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS Configuration for Render deployment
+CORS(app, origins=[
+    "https://cti-dashboard-frontend.onrender.com",
+    "http://localhost:3000",
+    "https://*.onrender.com"
+], methods=['GET', 'POST'], allow_headers=['Content-Type'])
 
 # Your API Keys
-VIRUSTOTAL_API = "cf38a3903a1a87ddda8be9ce77405b3a48cbbaf5d0be7dd5a539a3e7f3339171"
-ABUSEIPDB_API = "cfe32c805ab88fec494b59a1e8c99b264eb372b82970b42ee686072a864c551460296de8800dfad7"
+VIRUSTOTAL_API = os.getenv('VIRUSTOTAL_API', 'cf38a3903a1a87ddda8be9ce77405b3a48cbbaf5d0be7dd5a539a3e7f3339171')
+ABUSEIPDB_API = os.getenv('ABUSEIPDB_API', 'cfe32c805ab88fec494b59a1e8c99b264eb372b82970b42ee686072a864c551460296de8800dfad7')
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'database.db')
 
 def init_db():
-    conn = sqlite3.connect('database.db')
+    """Initialize SQLite database"""
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scan_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,26 +40,33 @@ def init_db():
             scan_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
     conn.commit()
     conn.close()
 
 def save_scan_result(target, target_type, vt_result, abuse_result):
-    conn = sqlite3.connect('database.db')
+    """Save scan result to SQLite database"""
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
+    
     cursor.execute('''
         INSERT INTO scan_history (target, target_type, virustotal_result, abuseipdb_result)
         VALUES (?, ?, ?, ?)
     ''', (target, target_type, json.dumps(vt_result), json.dumps(abuse_result)))
+    
     conn.commit()
     conn.close()
 
 def get_scan_history():
-    conn = sqlite3.connect('database.db')
+    """Get scan history from SQLite database"""
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
+    
     cursor.execute('''
         SELECT target, target_type, virustotal_result, abuseipdb_result, scan_date
         FROM scan_history ORDER BY scan_date DESC LIMIT 50
     ''')
+    
     results = cursor.fetchall()
     conn.close()
     
@@ -58,9 +79,11 @@ def get_scan_history():
             'abuseipdb_result': json.loads(row[3]) if row[3] else None,
             'scan_date': row[4]
         })
+    
     return history
 
 def detect_target_type(target):
+    """Detect if target is IP, domain, or URL"""
     ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
     url_pattern = r'^https?://'
     
@@ -72,6 +95,7 @@ def detect_target_type(target):
         return 'domain'
 
 def scan_virustotal(target, target_type):
+    """Scan target using VirusTotal API"""
     try:
         if target_type == 'ip':
             url = "https://www.virustotal.com/vtapi/v2/ip-address/report"
@@ -89,6 +113,7 @@ def scan_virustotal(target, target_type):
         return {'error': str(e)}
 
 def scan_abuseipdb(target):
+    """Scan IP using AbuseIPDB API"""
     try:
         if detect_target_type(target) != 'ip':
             return {'message': 'AbuseIPDB only supports IP addresses'}
@@ -107,6 +132,7 @@ def scan_abuseipdb(target):
 
 @app.route('/api/scan', methods=['POST'])
 def scan_target():
+    """Main scanning endpoint"""
     data = request.get_json()
     target = data.get('target', '').strip()
     
@@ -114,12 +140,16 @@ def scan_target():
         return jsonify({'error': 'Target is required'}), 400
     
     target_type = detect_target_type(target)
+    
+    # Scan with VirusTotal
     vt_result = scan_virustotal(target, target_type)
     
+    # Scan with AbuseIPDB (only for IPs)
     abuse_result = None
     if target_type == 'ip':
         abuse_result = scan_abuseipdb(target)
     
+    # Save to database
     save_scan_result(target, target_type, vt_result, abuse_result)
     
     return jsonify({
@@ -132,12 +162,14 @@ def scan_target():
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
+    """Get scan history"""
     history = get_scan_history()
     return jsonify(history)
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    conn = sqlite3.connect('database.db')
+    """Get basic statistics"""
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
     cursor.execute('SELECT COUNT(*) FROM scan_history')
@@ -159,6 +191,29 @@ def get_stats():
         'ip_scans': ip_scans,
         'domain_scans': domain_scans,
         'url_scans': url_scans
+    })
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Render"""
+    return jsonify({
+        'status': 'healthy',
+        'message': 'CTI Dashboard Backend is running',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint"""
+    return jsonify({
+        'message': 'CTI Dashboard API is running',
+        'created_by': 'Suprodip Biswas (BTech Student)',
+        'endpoints': {
+            'scan': '/api/scan',
+            'history': '/api/history',
+            'stats': '/api/stats',
+            'health': '/health'
+        }
     })
 
 if __name__ == '__main__':
