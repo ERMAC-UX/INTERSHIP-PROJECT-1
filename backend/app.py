@@ -13,14 +13,13 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Complete CORS Configuration
+# Comprehensive CORS Configuration
 CORS(app, 
      origins=[
-         "https://cti-dashboard-frontend.onrender.com",  # Your Render frontend
-         "http://localhost:3000",                        # Local development
-         "https://*.onrender.com",                       # Any Render subdomain
-         "http://127.0.0.1:3000",                        # Alternative localhost
-         "http://localhost:3001"                         # Alternative port
+         "https://cti-dashboard-frontend.onrender.com",
+         "http://localhost:3000",
+         "http://127.0.0.1:3000",
+         "https://*.onrender.com"
      ],
      methods=['GET', 'POST', 'OPTIONS'],
      allow_headers=[
@@ -34,8 +33,7 @@ CORS(app,
          'Accept',
          'X-Requested-With'
      ],
-     supports_credentials=True,
-     expose_headers=['Content-Type', 'Authorization']
+     supports_credentials=True
 )
 
 # Add CORS headers to all responses
@@ -54,7 +52,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Origin,Accept,X-Requested-With')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Max-Age', '3600')
     
     return response
 
