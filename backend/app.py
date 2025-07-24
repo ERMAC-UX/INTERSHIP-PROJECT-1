@@ -13,12 +13,61 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# CORS Configuration for Render deployment
-CORS(app, origins=[
-    "https://cti-dashboard-frontend.onrender.com",
-    "http://localhost:3000",
-    "https://*.onrender.com"
-], methods=['GET', 'POST'], allow_headers=['Content-Type'])
+# Complete CORS Configuration
+CORS(app, 
+     origins=[
+         "https://cti-dashboard-frontend.onrender.com",  # Your Render frontend
+         "http://localhost:3000",                        # Local development
+         "https://*.onrender.com",                       # Any Render subdomain
+         "http://127.0.0.1:3000",                        # Alternative localhost
+         "http://localhost:3001"                         # Alternative port
+     ],
+     methods=['GET', 'POST', 'OPTIONS'],
+     allow_headers=[
+         'Content-Type',
+         'Authorization',
+         'Access-Control-Allow-Credentials',
+         'Access-Control-Allow-Origin',
+         'Access-Control-Allow-Headers',
+         'Access-Control-Allow-Methods',
+         'Origin',
+         'Accept',
+         'X-Requested-With'
+     ],
+     supports_credentials=True,
+     expose_headers=['Content-Type', 'Authorization']
+)
+
+# Add CORS headers to all responses
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    allowed_origins = [
+        "https://cti-dashboard-frontend.onrender.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ]
+    
+    if origin in allowed_origins:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+    
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Origin,Accept,X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add('Access-Control-Max-Age', '3600')
+    
+    return response
+
+# Handle preflight requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({'message': 'CORS preflight'})
+        response.headers.add("Access-Control-Allow-Origin", request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Headers', "Content-Type,Authorization,Origin,Accept,X-Requested-With")
+        response.headers.add('Access-Control-Allow-Methods', "GET,PUT,POST,DELETE,OPTIONS")
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
 
 # Your API Keys
 VIRUSTOTAL_API = os.getenv('VIRUSTOTAL_API', 'cf38a3903a1a87ddda8be9ce77405b3a48cbbaf5d0be7dd5a539a3e7f3339171')
@@ -130,45 +179,58 @@ def scan_abuseipdb(target):
     except Exception as e:
         return {'error': str(e)}
 
-@app.route('/api/scan', methods=['POST'])
+@app.route('/api/scan', methods=['POST', 'OPTIONS'])
 def scan_target():
     """Main scanning endpoint"""
-    data = request.get_json()
-    target = data.get('target', '').strip()
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'CORS preflight for scan endpoint'})
     
-    if not target:
-        return jsonify({'error': 'Target is required'}), 400
-    
-    target_type = detect_target_type(target)
-    
-    # Scan with VirusTotal
-    vt_result = scan_virustotal(target, target_type)
-    
-    # Scan with AbuseIPDB (only for IPs)
-    abuse_result = None
-    if target_type == 'ip':
-        abuse_result = scan_abuseipdb(target)
-    
-    # Save to database
-    save_scan_result(target, target_type, vt_result, abuse_result)
-    
-    return jsonify({
-        'target': target,
-        'target_type': target_type,
-        'virustotal': vt_result,
-        'abuseipdb': abuse_result,
-        'scan_date': datetime.now().isoformat()
-    })
+    try:
+        data = request.get_json()
+        target = data.get('target', '').strip()
+        
+        if not target:
+            return jsonify({'error': 'Target is required'}), 400
+        
+        target_type = detect_target_type(target)
+        
+        # Scan with VirusTotal
+        vt_result = scan_virustotal(target, target_type)
+        
+        # Scan with AbuseIPDB (only for IPs)
+        abuse_result = None
+        if target_type == 'ip':
+            abuse_result = scan_abuseipdb(target)
+        
+        # Save to database
+        save_scan_result(target, target_type, vt_result, abuse_result)
+        
+        return jsonify({
+            'target': target,
+            'target_type': target_type,
+            'virustotal': vt_result,
+            'abuseipdb': abuse_result,
+            'scan_date': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/history', methods=['GET'])
+@app.route('/api/history', methods=['GET', 'OPTIONS'])
 def get_history():
     """Get scan history"""
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'CORS preflight for history endpoint'})
+    
     history = get_scan_history()
     return jsonify(history)
 
-@app.route('/api/stats', methods=['GET'])
+@app.route('/api/stats', methods=['GET', 'OPTIONS'])
 def get_stats():
     """Get basic statistics"""
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'CORS preflight for stats endpoint'})
+    
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
@@ -193,18 +255,24 @@ def get_stats():
         'url_scans': url_scans
     })
 
-@app.route('/health', methods=['GET'])
+@app.route('/health', methods=['GET', 'OPTIONS'])
 def health_check():
     """Health check endpoint for Render"""
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'CORS preflight for health endpoint'})
+    
     return jsonify({
         'status': 'healthy',
         'message': 'CTI Dashboard Backend is running',
         'timestamp': datetime.now().isoformat()
     })
 
-@app.route('/', methods=['GET'])
+@app.route('/', methods=['GET', 'OPTIONS'])
 def root():
     """Root endpoint"""
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'CORS preflight for root endpoint'})
+    
     return jsonify({
         'message': 'CTI Dashboard API is running',
         'created_by': 'Suprodip Biswas (BTech Student)',
